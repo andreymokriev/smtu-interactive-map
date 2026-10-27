@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 
 export default defineConfig({
-  base: '/smtu-interactive-map//',
+  base: '/smtu-interactive-map/',
   build: {
     rollupOptions: {
       output: {
