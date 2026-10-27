@@ -1,9 +1,14 @@
-// vite.config.js
 import { defineConfig } from 'vite'
 
 export default defineConfig({
-  // Если адрес вашего сайта: https://ваш_ник.github.io/имя_репозитория/
-  // То здесь нужно указать: '/имя_репозитория/'
-  // Если это репозиторий вида username.github.io, укажите '/'
-  base: '/smtu-interactive-map/',
+  base: './',
+  build: {
+    rollupOptions: {
+      output: {
+        assetFileNames: 'assets/[name]-[hash][extname]',
+        chunkFileNames: 'assets/[name]-[hash].js',
+        entryFileNames: 'assets/[name]-[hash].js'
+      }
+    }
+  }
 })
