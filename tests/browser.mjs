@@ -227,6 +227,9 @@ console.log(`\nПроверка ${BASE_URL} в ${executablePath}\n`);
 
 await openApp({ width: 1280, height: 800 });
 
+const loadMs = await page.evaluate(() => Math.round(performance.now()));
+check('план загружается и разбирается меньше чем за 4 с', loadMs < 4000, `${loadMs} мс`);
+
 const diagnostics = await page.evaluate(() => window.__navigator.diagnostics());
 console.log(
   `Помещений: ${diagnostics.rooms}, контуров стен: ${diagnostics.wallsShapes}, ` +
@@ -297,6 +300,30 @@ for (const label of ['stud_124', 'dean_130', 'dep_143', 'admin_183', 'toilet_3']
     `площадь ${room?.area.toFixed(1)} против контура ${truth.areas[label].toFixed(1)}, габарит ${room?.width.toFixed(1)}×${room?.height.toFixed(1)}`,
   );
 }
+
+// Разбор не зависит от того, чем нарисована комната: rect и polygon обрабатываются как path.
+const shapesSupport = await page.evaluate(async () => {
+  const text = await (await fetch(window.__navigator.planUrl)).text();
+  const extra =
+    '<rect x="212" y="152" width="24" height="18" inkscape:label="stud_901" fill="#000000" />' +
+    '<polygon points="250,152 274,152 274,170 250,170" inkscape:label="stud_902" fill="#000000" />' +
+    '<g transform="translate(6,0)"><rect x="300" y="156" width="24" height="18" inkscape:label="stud_903" fill="#000000" /></g>';
+  const parsed = window.__navigator.parseText(text.replace('</g>', extra + '</g>'));
+  return parsed.rooms
+    .filter((room) => room.id.startsWith('stud_90'))
+    .map((room) => ({ id: room.id, area: Math.round(room.area), x: Math.round(room.bounds.min.x) }));
+});
+
+check(
+  'прямоугольник и многоугольник разбираются наравне с path',
+  shapesSupport.length === 3 && shapesSupport.every((room) => Math.abs(room.area - 432) < 30),
+  shapesSupport.map((room) => `${room.id}: ${room.area} ед²`).join(', '),
+);
+check(
+  'transform группы учитывается при построении пятна',
+  shapesSupport.every((room) => room.id !== 'stud_903' || Math.abs(room.x - 306) <= 1),
+  `stud_903 начинается с x=${shapesSupport.find((room) => room.id === 'stud_903')?.x} (ожидается 306)`,
+);
 
 // Плита должна занимать разумную часть своего габарита: тонкая рамка — это ошибка,
 // а пятно больше габарита — тоже (значит, контур залился не туда).
@@ -438,6 +465,9 @@ check('в кадре есть разнообразие цветов', frame.colo
 /* ------------------------------------------------------------- мобильный вид */
 
 await openApp({ width: 390, height: 844, hasTouch: true });
+const mobileLabels = await page.evaluate(() => window.__navigator.diagnostics().visibleLabels);
+check('на телефоне общий вид не засыпан номерами', mobileLabels < 10, `${mobileLabels} подписей`);
+
 await page.evaluate(() => {
   window.__navigator.select('stud_105', { focus: false });
 });

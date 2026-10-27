@@ -10,10 +10,14 @@
  */
 import { Box2 } from 'three';
 import { SVGLoader } from 'three/examples/jsm/loaders/SVGLoader.js';
-import { PLAN_URL, WALLS_LABEL } from '../config.js';
+import { WALLS_LABEL } from '../config.js';
 import { kindColor, normalize, parseRoomLabel } from './rooms.js';
 import { shapesMetrics } from './geometry.js';
-import { extractFootprint } from './raster.js';
+import { extractFootprint, multiplyMatrices, parseSvgMatrix } from './raster.js';
+
+/** Элементы плана, которые могут обозначать помещение или стены. */
+const PLAN_ELEMENTS = 'path, rect, polygon, polyline, ellipse, circle, line';
+const NUMBERS = /-?\d*\.?\d+(?:e[-+]?\d+)?/gi;
 
 const INKSCAPE_NS = 'http://www.inkscape.org/namespaces/inkscape';
 const CURVE_SEGMENTS = 8;
@@ -36,6 +40,71 @@ export function readLabel(element) {
   return AUTO_ID.test(id) ? '' : id;
 }
 
+/**
+ * Приводит любой элемент плана к данным контура: у path это атрибут d,
+ * у rect/polygon/ellipse контур синтезируется.
+ */
+export function elementToPathData(element) {
+  const tag = (element.tagName || '').toLowerCase();
+  if (tag === 'path') return element.getAttribute('d') || '';
+
+  const number = (name) => {
+    const value = Number.parseFloat(element.getAttribute(name) ?? '');
+    return Number.isFinite(value) ? value : 0;
+  };
+
+  if (tag === 'rect') {
+    const x = number('x');
+    const y = number('y');
+    const width = number('width');
+    const height = number('height');
+    if (width <= 0 || height <= 0) return '';
+    return `M ${x} ${y} H ${x + width} V ${y + height} H ${x} Z`;
+  }
+
+  if (tag === 'polygon' || tag === 'polyline') {
+    const values = (element.getAttribute('points') ?? '').match(NUMBERS) ?? [];
+    const points = [];
+    for (let i = 0; i + 1 < values.length; i += 2) points.push(`${values[i]} ${values[i + 1]}`);
+    if (points.length < 2) return '';
+    return `M ${points[0]} L ${points.slice(1).join(' L ')}${tag === 'polygon' ? ' Z' : ''}`;
+  }
+
+  if (tag === 'ellipse' || tag === 'circle') {
+    const cx = number('cx');
+    const cy = number('cy');
+    const rx = tag === 'circle' ? number('r') : number('rx');
+    const ry = tag === 'circle' ? number('r') : number('ry');
+    if (rx <= 0 || ry <= 0) return '';
+    const points = [];
+    for (let i = 0; i < 32; i += 1) {
+      const angle = (i / 32) * Math.PI * 2;
+      points.push(`${cx + rx * Math.cos(angle)} ${cy + ry * Math.sin(angle)}`);
+    }
+    return `M ${points.join(' L ')} Z`;
+  }
+
+  if (tag === 'line') {
+    return `M ${number('x1')} ${number('y1')} L ${number('x2')} ${number('y2')}`;
+  }
+
+  return '';
+}
+
+/** Матрица элемента вместе со всеми transform'ами групп-родителей. */
+export function elementMatrix(element) {
+  const chain = [];
+  let node = element;
+  while (node && node.nodeName !== 'svg') {
+    chain.unshift(node.getAttribute?.('transform') ?? '');
+    node = node.parentElement;
+  }
+
+  let matrix = [1, 0, 0, 1, 0, 0];
+  for (const text of chain) matrix = multiplyMatrices(matrix, parseSvgMatrix(text));
+  return matrix;
+}
+
 /** Значение SVG-свойства: сначала из атрибута style, затем из presentation-атрибута. */
 function readPaint(element, property) {
   const inline = element.getAttribute('style') || '';
@@ -55,7 +124,8 @@ function setFill(element, color) {
   element.setAttribute('stroke', 'none');
 }
 
-export async function loadPlan(url = PLAN_URL) {
+export async function loadPlan(url) {
+  if (!url) throw new Error('Не задан путь к файлу плана');
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Не удалось загрузить план (${response.status}): ${url}`);
   const text = await response.text();
@@ -75,7 +145,7 @@ export function parsePlanText(text) {
  */
 export function parsePlanDocument(svgDoc) {
   const warnings = [];
-  const elements = Array.from(svgDoc.querySelectorAll('path'));
+  const elements = Array.from(svgDoc.querySelectorAll(PLAN_ELEMENTS));
   const entries = [];
   const seenIds = new Map();
 
@@ -86,8 +156,7 @@ export function parsePlanDocument(svgDoc) {
     const sourceFill = readPaint(element, 'fill');
     const sourceStroke = readPaint(element, 'stroke');
     const sourceFillRule = readPaint(element, 'fill-rule') || 'nonzero';
-    const d = element.getAttribute('d') || '';
-    const transform = element.getAttribute('transform') || '';
+    const d = elementToPathData(element);
 
     if (!label) {
       warnings.push(
@@ -136,7 +205,7 @@ export function parsePlanDocument(svgDoc) {
       sourceFill,
       sourceStroke,
       d,
-      transform,
+      matrix: elementMatrix(element),
       fillRule: sourceFillRule,
     });
   }
@@ -183,7 +252,7 @@ export function parsePlanDocument(svgDoc) {
     try {
       footprint = extractFootprint({
         d: entry.d,
-        transform: entry.transform,
+        matrix: entry.matrix,
         fillRule: entry.fillRule,
         bounds: contourBounds,
       });
@@ -223,6 +292,7 @@ export function parsePlanDocument(svgDoc) {
       bounds: metrics.bounds,
       // диагностика извлечения пятна (видна в window.__navigator.plan.rooms)
       sealRadius: footprint?.sealRadius ?? null,
+      filledCells: footprint?.filledAfterSeal ?? 0,
       contours: contourShapes.length,
       loops: footprint?.loops ?? 0,
     });

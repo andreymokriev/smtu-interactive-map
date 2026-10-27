@@ -15,8 +15,10 @@ import {
   WebGLRenderer,
 } from 'three';
 import { MapControls } from 'three/examples/jsm/controls/MapControls.js';
-import { CAMERA, LABEL_FADE, PLAN_URL } from './config.js';
-import { loadPlan } from './core/plan.js';
+// План этажа лежит в корне проекта: правьте его в Inkscape и обновляйте страницу.
+import PLAN_URL from '../1floor.svg?url';
+import { CAMERA, LABEL_FADE } from './config.js';
+import { loadPlan, parsePlanText } from './core/plan.js';
 import { buildModel, setHighlight, setKindVisible } from './core/build.js';
 import { LEGEND_ORDER, ROOM_TYPES, pluralRooms, searchRooms } from './core/rooms.js';
 
@@ -205,9 +207,13 @@ function topView() {
 
 function updateLabels() {
   if (!state.model) return;
+
+  // на телефоне 73 номера сразу — шум, поэтому там они появляются только при приближении
+  const compact = dom.viewport.clientWidth < 640;
+  const fade = compact ? LABEL_FADE.compact : LABEL_FADE;
   const distance = camera.position.distanceTo(controls.target);
-  const near = state.fitDistance * LABEL_FADE.near;
-  const far = state.fitDistance * LABEL_FADE.far;
+  const near = state.fitDistance * fade.near;
+  const far = state.fitDistance * fade.far;
   const closeness = 1 - clamp((distance - near) / Math.max(far - near, 1), 0, 1);
 
   for (const view of state.model.list) {
@@ -544,7 +550,7 @@ async function start() {
 
   const touch = window.matchMedia('(hover: none)').matches;
   dom.hint.textContent = touch
-    ? 'Один палец — сдвинуть · два пальца — зум и поворот'
+    ? 'Один палец — сдвинуть · два пальца — зум и поворот · приблизьте, чтобы увидеть номера'
     : 'ЛКМ — сдвинуть · колесо — зум · ПКМ — поворот · / — поиск';
   dom.hint.hidden = false;
 
@@ -595,6 +601,8 @@ async function start() {
     plan: state.plan,
     model: state.model,
     planUrl: PLAN_URL,
+    // проверить произвольный текст плана тем же разбором (для отладки правок в SVG)
+    parseText: parsePlanText,
     get scene() {
       return scene;
     },
