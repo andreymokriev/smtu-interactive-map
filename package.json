@@ -1,0 +1,23 @@
+{
+  "name": "university-3d-navigator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Интерактивный 3D-навигатор по корпусу университета (three.js + SVG-планы этажей)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4173",
+    "analyze:svg": "node scripts/analyze-svg.mjs",
+    "analyze:plan": "node scripts/analyze-plan.mjs",
+    "test": "node --test",
+    "test:browser": "node tests/browser.mjs"
+  },
+  "dependencies": {
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^24.43.1",
+    "vite": "^7.3.7"
+  }
+}

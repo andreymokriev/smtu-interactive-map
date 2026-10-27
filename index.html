@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+    <meta name="theme-color" content="#f2f4f8" />
+    <meta name="description" content="3D-навигатор по корпусу: поиск аудиторий и помещений вместо PDF-планов" />
+    <title>3D-навигатор · 1 этаж</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="viewport"></div>
+
+    <!-- Поиск -->
+    <header class="search" id="search">
+      <div class="search__field">
+        <svg class="search__icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" />
+          <path d="M16.5 16.5 21 21" />
+        </svg>
+        <input
+          id="query"
+          class="search__input"
+          type="search"
+          role="combobox"
+          aria-expanded="false"
+          aria-controls="results"
+          autocomplete="off"
+          autocorrect="off"
+          spellcheck="false"
+          placeholder="Аудитория или помещение — например 105"
+        />
+        <button id="query-clear" class="search__clear" type="button" aria-label="Очистить" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" /></svg>
+        </button>
+      </div>
+
+      <ul id="results" class="results" role="listbox" hidden></ul>
+
+      <div id="legend" class="legend" role="group" aria-label="Типы помещений"></div>
+    </header>
+
+    <div class="controls">
+      <button id="btn-reset" class="icon-btn" type="button" title="Показать весь этаж" aria-label="Показать весь этаж">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15" />
+        </svg>
+      </button>
+      <button id="btn-top" class="icon-btn" type="button" title="Вид сверху" aria-label="Вид сверху">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 4v6M12 4 9 7M12 4l3 3" />
+          <rect x="4" y="12" width="16" height="8" rx="1.6" />
+        </svg>
+      </button>
+      <button id="btn-labels" class="icon-btn is-on" type="button" title="Номера помещений" aria-label="Номера помещений" aria-pressed="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6.5 7.5h11M6.5 12h11M6.5 16.5h7" />
+        </svg>
+      </button>
+    </div>
+
+    <!-- Карточка найденного помещения -->
+    <section id="card" class="card" hidden aria-live="polite">
+      <div class="card__head">
+        <span id="card-dot" class="card__dot"></span>
+        <div class="card__titles">
+          <h2 id="card-title" class="card__title">—</h2>
+          <p id="card-sub" class="card__sub">—</p>
+        </div>
+        <button id="card-close" class="card__close" type="button" aria-label="Закрыть">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" /></svg>
+        </button>
+      </div>
+    </section>
+
+    <p id="status" class="status" hidden></p>
+    <p id="hint" class="hint" hidden></p>
+
+    <div id="loading" class="loading">
+      <div class="loading__spinner"></div>
+      <p id="loading-text">Загружаем план этажа…</p>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
