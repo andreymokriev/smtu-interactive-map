@@ -241,18 +241,21 @@ if (diagnostics.warnings.length > 0) {
 
 check('приложение готово и план разобран', diagnostics.ready && diagnostics.rooms >= 70, `${diagnostics.rooms} помещений`);
 check('стены найдены', diagnostics.wallsShapes > 0, `${diagnostics.wallsShapes} фигур`);
-check(
-  'элемент без подписи (path84) пропущен с предупреждением',
-  diagnostics.warnings.some((warning) => warning.includes('path84') && warning.includes('пропущен')),
-  diagnostics.warnings.join(' | '),
-);
+const unlabelledWarning = await page.evaluate(async () => {
+  const text = await (await fetch(window.__navigator.planUrl)).text();
+  const parsed = window.__navigator.parseText(
+    text.replace('</g>', '<path id="path84" d="M 10 10 L 20 10 L 20 20 Z" /></g>'),
+  );
+  return parsed.warnings.some((warning) => warning.includes('path84') && warning.includes('пропущен'));
+});
+check('элемент без подписи пропускается с предупреждением', unlabelledWarning);
 
 const knownLabels = [
   'stud_101',
   'stud_105',
   'stud_124',
   'dep_146_147_148',
-  'other_gym',
+  'gym',
   'toilet_1',
   'admin_183',
   'dean_133',
@@ -427,6 +430,56 @@ const topView = await page.evaluate(() => {
   return camera.position.distanceTo(target);
 });
 check('вид сверху переворачивает камеру без потери объекта', topView > 100, `расстояние ${topView.toFixed(0)}`);
+
+/* ------------------------------------------------------- переключатель этажей */
+
+const floorButtons = await page.evaluate(() =>
+  Array.from(document.querySelectorAll('#floors .floor')).map((button) => ({
+    id: button.dataset.floor,
+    pressed: button.getAttribute('aria-pressed'),
+  })),
+);
+check(
+  'переключатель содержит все пять этажей и отмечает текущий',
+  floorButtons.length === 5 && floorButtons[0].pressed === 'true',
+  floorButtons.map((button) => `${button.id}:${button.pressed}`).join(', '),
+);
+
+await page.click('#floors .floor[data-floor="2"]');
+await page.waitForFunction(
+  () => window.__navigator.floor === '2' && window.__navigator.diagnostics().ready,
+  { timeout: 20000 },
+);
+
+const secondFloor = await page.evaluate(() => {
+  const diagnostics = window.__navigator.diagnostics();
+  const special = window.__navigator.plan.rooms
+    .filter((room) => ['reading_room', 'library', 'information_tech_institute'].includes(room.kind))
+    .map((room) => ({ id: room.id, kind: room.kind, area: room.area }));
+  const pressed = Array.from(document.querySelectorAll('#floors .floor'))
+    .filter((button) => button.getAttribute('aria-pressed') === 'true')
+    .map((button) => button.dataset.floor);
+  return {
+    rooms: diagnostics.rooms,
+    kinds: diagnostics.kinds,
+    special,
+    pressed,
+    status: document.getElementById('status').textContent,
+    legend: Array.from(document.querySelectorAll('#legend .chip')).map((chip) => chip.dataset.kind),
+  };
+});
+
+check('переключение на 2 этаж меняет план и кнопку', secondFloor.pressed.length === 1 && secondFloor.pressed[0] === '2', secondFloor.pressed.join(', '));
+check('на 2 этаже распознаны читальный зал, библиотека и институт ИТ', secondFloor.special.length === 3, JSON.stringify(secondFloor.kinds));
+check(
+  'новые помещения получили залитые плиты',
+  secondFloor.special.every((room) => room.area > 1000),
+  secondFloor.special.map((room) => `${room.kind}: ${Math.round(room.area)} ед²`).join(', '),
+);
+check('легенда и статус соответствуют 2 этажу', secondFloor.status.includes('2 этаж') && secondFloor.legend.includes('library'), secondFloor.status);
+
+await page.evaluate(() => window.__navigator.setFloor('1'));
+await page.waitForFunction(() => window.__navigator.floor === '1', { timeout: 20000 });
 
 /* -------------------------------------------------------- кадр не пустой */
 

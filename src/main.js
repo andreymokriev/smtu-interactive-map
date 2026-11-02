@@ -1,8 +1,9 @@
 /**
- * 3D-навигатор по этажу: точка входа.
+ * 3D-навигатор по корпусу: точка входа.
  *
- * Сцена собирается из SVG-плана (см. core/plan.js), затем к ней подключаются
- * управление камерой, выбор помещений касанием и поиск с фильтрами по типам.
+ * Сцена собирается из SVG-планов этажей (см. core/plan.js), затем к ней подключаются
+ * управление камерой, выбор помещений касанием, поиск с фильтрами по типам
+ * и переключатель этажей.
  */
 import {
   DirectionalLight,
@@ -15,12 +16,25 @@ import {
   WebGLRenderer,
 } from 'three';
 import { MapControls } from 'three/examples/jsm/controls/MapControls.js';
-// План этажа лежит в корне проекта: правьте его в Inkscape и обновляйте страницу.
-import PLAN_URL from '../1floor.svg?url';
+// Планы этажей лежат в корне проекта: правьте их в Inkscape и обновляйте страницу.
+import PLAN_URL_1 from '../1floor.svg?url';
+import PLAN_URL_2 from '../2floor.svg?url';
+import PLAN_URL_3 from '../3floor.svg?url';
+import PLAN_URL_4 from '../4floor.svg?url';
+import PLAN_URL_5 from '../5floor.svg?url';
 import { CAMERA, LABEL_FADE } from './config.js';
 import { loadPlan, parsePlanText } from './core/plan.js';
 import { buildModel, setHighlight, setKindVisible } from './core/build.js';
 import { LEGEND_ORDER, ROOM_TYPES, pluralRooms, searchRooms } from './core/rooms.js';
+
+const FLOORS = [
+  { id: '1', label: '1 этаж', url: PLAN_URL_1 },
+  { id: '2', label: '2 этаж', url: PLAN_URL_2 },
+  { id: '3', label: '3 этаж', url: PLAN_URL_3 },
+  { id: '4', label: '4 этаж', url: PLAN_URL_4 },
+  { id: '5', label: '5 этаж', url: PLAN_URL_5 },
+];
+const FLOOR_BY_ID = new Map(FLOORS.map((floor) => [floor.id, floor]));
 
 const dom = {
   viewport: document.getElementById('viewport'),
@@ -28,6 +42,7 @@ const dom = {
   queryClear: document.getElementById('query-clear'),
   results: document.getElementById('results'),
   legend: document.getElementById('legend'),
+  floors: document.getElementById('floors'),
   card: document.getElementById('card'),
   cardTitle: document.getElementById('card-title'),
   cardSub: document.getElementById('card-sub'),
@@ -45,6 +60,9 @@ const dom = {
 const state = {
   plan: null,
   model: null,
+  floorId: FLOORS[0].id,
+  floors: new Map(),
+  floorToken: 0,
   selectedId: null,
   hoveredId: null,
   hiddenKinds: new Set(),
@@ -432,6 +450,10 @@ function toggleKind(kind, chip) {
   updateStatus();
 }
 
+function floorLabel() {
+  return FLOOR_BY_ID.get(state.floorId)?.label ?? '';
+}
+
 function updateStatus() {
   if (!state.plan) return;
   const rooms = state.plan.rooms;
@@ -439,15 +461,140 @@ function updateStatus() {
   if (state.hoveredId) {
     const view = state.model.views.get(state.hoveredId);
     if (view) {
-      dom.status.textContent = `${view.room.title} · 1 этаж`;
+      dom.status.textContent = `${view.room.title} · ${floorLabel()}`;
       return;
     }
   }
 
   const hidden = state.hiddenKinds.size > 0 ? ` · скрыто типов: ${state.hiddenKinds.size}` : '';
   const problems = state.plan.warnings.length > 0 ? ` · замечаний к плану: ${state.plan.warnings.length}` : '';
-  dom.status.textContent = `${rooms.length} ${pluralRooms(rooms.length)} · 1 этаж${hidden}${problems}`;
+  dom.status.textContent = `${rooms.length} ${pluralRooms(rooms.length)} · ${floorLabel()}${hidden}${problems}`;
   dom.status.title = state.plan.warnings.join('\n');
+}
+
+/* ------------------------------------------------------------------ этажи */
+
+function buildFloorSwitcher() {
+  dom.floors.replaceChildren();
+  for (const floor of FLOORS) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'floor';
+    button.dataset.floor = floor.id;
+    button.textContent = floor.id;
+    button.setAttribute('aria-label', floor.label);
+    button.title = floor.label;
+    button.addEventListener('click', () => showFloor(floor.id, { animate: true }));
+    dom.floors.append(button);
+  }
+  updateFloorSwitcher();
+}
+
+function updateFloorSwitcher() {
+  for (const button of dom.floors.children) {
+    const active = button.dataset.floor === state.floorId;
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  }
+}
+
+function setFloorSwitcherDisabled(disabled) {
+  for (const button of dom.floors.children) button.disabled = disabled;
+}
+
+function showLoading(text) {
+  dom.loadingText.textContent = text;
+  if (!dom.loading.querySelector('.loading__spinner')) {
+    const spinner = document.createElement('div');
+    spinner.className = 'loading__spinner';
+    dom.loading.prepend(spinner);
+  }
+  dom.loading.classList.remove('loading--done');
+}
+
+function hideLoading() {
+  dom.loading.classList.add('loading--done');
+}
+
+/**
+ * Показывает этаж, загружая и собирая его модель при первом обращении.
+ * Разобранные этажи кешируются, поэтому повторное переключение мгновенное.
+ */
+async function showFloor(id, { animate = false, initial = false } = {}) {
+  const floor = FLOOR_BY_ID.get(id);
+  if (!floor) return;
+  if (!initial && state.model && state.floorId === id) return;
+
+  const token = (state.floorToken += 1);
+  let shown = false;
+  setFloorSwitcherDisabled(true);
+  if (!initial) showLoading(`Загружаем ${floor.label}…`);
+
+  try {
+    let entry = state.floors.get(id);
+    if (!entry) {
+      const plan = await loadPlan(floor.url);
+      if (token !== state.floorToken) return;
+
+      if (plan.rooms.length === 0) {
+        throw new Error(`На плане «${floor.label}» не найдено ни одного помещения: проверьте подписи inkscape:label.`);
+      }
+
+      entry = { plan, model: buildModel(plan) };
+      state.floors.set(id, entry);
+      scene.add(entry.model.group);
+
+      if (plan.warnings.length > 0) {
+        console.warn(`План «${floor.label}» загружен с замечаниями (${plan.warnings.length}):`);
+        for (const warning of plan.warnings) console.warn(' ·', warning);
+      }
+    }
+
+    // смена этажа: плиты предыдущего просто прячем целиком
+    if (state.model) {
+      selectRoom(null);
+      state.model.group.visible = false;
+    }
+
+    state.floorId = id;
+    state.plan = entry.plan;
+    state.model = entry.model;
+    state.model.group.visible = true;
+    state.hiddenKinds.clear();
+    state.hoveredId = null;
+    state.selectedId = null;
+    dom.card.hidden = true;
+
+    // на другом этаже набор типов иной: фильтры сбрасываем, все плиты показываем
+    for (const view of state.model.list) setKindVisible(view, true);
+
+    updateFloorSwitcher();
+    buildLegend();
+    updateStatus();
+    document.title = `3D-навигатор · ${floor.label}`;
+    frameModel({ animate });
+    updateLabels();
+
+    if (dom.query.value.trim()) onQueryInput();
+    else hideResults();
+    shown = true;
+  } catch (error) {
+    if (token !== state.floorToken) return;
+    state.errors.push(String(error));
+
+    if (initial) {
+      showFatal(error.message);
+    } else {
+      console.error(error);
+      hideLoading();
+      dom.status.hidden = false;
+      dom.status.textContent = `Не удалось открыть ${floor.label}: ${error.message}`;
+    }
+  } finally {
+    if (token === state.floorToken) {
+      setFloorSwitcherDisabled(false);
+      if (shown) hideLoading();
+    }
+  }
 }
 
 function bindUi() {
@@ -547,6 +694,7 @@ async function start() {
   if (!createRenderer()) return;
   createScene();
   bindUi();
+  buildFloorSwitcher();
 
   const touch = window.matchMedia('(hover: none)').matches;
   dom.hint.textContent = touch
@@ -568,39 +716,28 @@ async function start() {
 
   onResize();
 
-  try {
-    state.plan = await loadPlan(PLAN_URL);
-  } catch (error) {
-    showFatal(error.message);
-    state.errors.push(String(error));
-    return;
-  }
+  await showFloor(FLOORS[0].id, { initial: true });
+  if (!state.plan || !state.model) return;
 
-  if (state.plan.rooms.length === 0) {
-    showFatal('В плане не найдено ни одного помещения: проверьте подписи inkscape:label.');
-    return;
-  }
-
-  state.model = buildModel(state.plan);
-  scene.add(state.model.group);
-
-  if (state.plan.warnings.length > 0) {
-    console.warn(`План загружен с замечаниями (${state.plan.warnings.length}):`);
-    for (const warning of state.plan.warnings) console.warn(' ·', warning);
-  }
-
-  buildLegend();
-  updateStatus();
-  frameModel({ animate: false });
-  updateLabels();
-  dom.loading.classList.add('loading--done');
   dom.status.hidden = false;
 
   // отладочная ручка: пригодится, чтобы проверять план и разбираться с ошибками в SVG
   window.__navigator = {
-    plan: state.plan,
-    model: state.model,
-    planUrl: PLAN_URL,
+    get plan() {
+      return state.plan;
+    },
+    get model() {
+      return state.model;
+    },
+    get planUrl() {
+      return FLOOR_BY_ID.get(state.floorId).url;
+    },
+    floors: FLOORS.map(({ id, label }) => ({ id, label })),
+    get floor() {
+      return state.floorId;
+    },
+    // переключить этаж программно (переключатель в интерфейсе делает то же самое)
+    setFloor: (id) => showFloor(id, { animate: true }),
     // проверить произвольный текст плана тем же разбором (для отладки правок в SVG)
     parseText: parsePlanText,
     get scene() {
@@ -629,6 +766,7 @@ function diagnostics() {
   const bounds = plan?.bounds;
   return {
     ready: Boolean(model),
+    floor: state.floorId,
     rooms: plan?.rooms.length ?? 0,
     wallsShapes: plan?.walls?.shapes.length ?? 0,
     labelsBuilt: model?.list.length ?? 0,

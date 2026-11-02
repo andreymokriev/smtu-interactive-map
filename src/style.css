@@ -52,6 +52,52 @@ svg {
   stroke-linejoin: round;
 }
 
+/* ---------- этажи ---------- */
+
+.floors {
+  display: inline-flex;
+  gap: 3px;
+  margin-bottom: 8px;
+  padding: 4px;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 13px;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+.floor {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.floor:hover {
+  color: var(--ink);
+}
+
+.floor[aria-pressed="true"] {
+  background: var(--accent);
+  color: #fff;
+}
+
+.floor:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 /* ---------- поиск ---------- */
 
 .search {
@@ -431,7 +477,7 @@ svg {
 
   .controls {
     bottom: auto;
-    top: calc(var(--top) + 58px);
+    top: calc(var(--top) + 106px);
     right: 12px;
     grid-auto-flow: column;
   }

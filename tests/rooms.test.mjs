@@ -42,6 +42,23 @@ test('parseRoomLabel: тип, подтип и номера', () => {
   assert.equal(legacy.title, 'Кафедра 6');
 });
 
+test('parseRoomLabel: составные типы без номера (2 этаж)', () => {
+  const reading = parseRoomLabel('reading_room');
+  assert.equal(reading.type, 'reading_room');
+  assert.equal(reading.kind, 'reading_room');
+  assert.equal(reading.title, 'Читальный зал');
+  assert.deepEqual(reading.numbers, []);
+
+  const library = parseRoomLabel('library');
+  assert.equal(library.kind, 'library');
+  assert.equal(library.title, 'Библиотека');
+
+  const institute = parseRoomLabel('information_tech_institute');
+  assert.equal(institute.type, 'information_tech_institute');
+  assert.equal(institute.title, 'Институт информационных технологий');
+  assert.deepEqual(institute.numbers, []);
+});
+
 test('parseRoomLabel: имя без типа и сломанное имя не ломают разбор', () => {
   const bare = parseRoomLabel('162');
   assert.equal(bare.type, 'other');

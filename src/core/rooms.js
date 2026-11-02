@@ -8,6 +8,14 @@
 export const ROOM_TYPES = {
   stud: { title: 'Аудитория', legend: 'Аудитории', color: '#1e88d0', synonyms: ['лекционная', 'класс'] },
   dean: { title: 'Деканат', legend: 'Деканаты', color: '#7c6eb0', synonyms: [] },
+  library: { title: 'Библиотека', legend: 'Библиотеки', color: '#6d4c9f', synonyms: ['книгохранилище'] },
+  reading_room: { title: 'Читальный зал', legend: 'Читальные залы', color: '#d19a00', synonyms: ['читалка'] },
+  information_tech_institute: {
+    title: 'Институт информационных технологий',
+    legend: 'Институт ИТ',
+    color: '#0e6e8c',
+    synonyms: ['иит', 'информационные технологии'],
+  },
   dep: { title: 'Кафедра', legend: 'Кафедры', color: '#c02e93', synonyms: [] },
   admin: { title: 'Администрация', legend: 'Администрация', color: '#ef7c00', synonyms: ['админ', 'дирекция'] },
   toilet: { title: 'Санузел', legend: 'Санузлы', color: '#12a150', synonyms: ['туалет', 'уборная', 'wc'] },
@@ -20,7 +28,19 @@ export const ROOM_TYPES = {
 export const ROOM_SUBTYPES = ['gym', 'medical'];
 
 /** Порядок чипов-фильтров в интерфейсе. */
-export const LEGEND_ORDER = ['stud', 'dep', 'dean', 'admin', 'toilet', 'gym', 'medical', 'other'];
+export const LEGEND_ORDER = [
+  'stud',
+  'dep',
+  'dean',
+  'admin',
+  'library',
+  'reading_room',
+  'information_tech_institute',
+  'toilet',
+  'gym',
+  'medical',
+  'other',
+];
 
 /** Типы, которые считаются аудиториями с номером (для подписи на плане). */
 const HOMOGLYPHS = {
@@ -50,10 +70,14 @@ export function parseRoomLabel(raw) {
   const label = String(raw || '').trim();
   const tokens = label.split(/[_\s]+/).filter(Boolean);
 
+  // Тип может состоять из нескольких слов: reading_room, information_tech_institute.
+  const whole = tokens.join('_').toLowerCase();
+  const wholeType = tokens.length > 1 && Object.prototype.hasOwnProperty.call(ROOM_TYPES, whole) ? whole : null;
+
   const first = (tokens[0] || '').toLowerCase();
-  const hasType = Object.prototype.hasOwnProperty.call(ROOM_TYPES, first);
-  const type = hasType ? first : 'other';
-  const rest = hasType ? tokens.slice(1) : tokens;
+  const hasType = wholeType !== null || Object.prototype.hasOwnProperty.call(ROOM_TYPES, first);
+  const type = wholeType ?? (hasType ? first : 'other');
+  const rest = wholeType !== null ? [] : hasType ? tokens.slice(1) : tokens;
 
   // Номера — токены, в которых есть цифры (105, 146, 110a, 2).
   const numbers = rest.filter((token) => /\d/.test(token));
