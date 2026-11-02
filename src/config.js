@@ -17,13 +17,33 @@ export const LABEL_HEIGHT = 4.6; // высота, на которой висят
 export const LABEL_SIZE = 6.4; // высота «таблетки» с номером в единицах сцены
 export const FLOOR_MARGIN = 70; // запас подложки пола вокруг корпуса
 
-export const COLORS = {
-  floor: '#e9edf3',
-  floorEdge: '#dde2ea',
-  walls: '#d8dee7',
-  label: '#101623',
-  labelBg: 'rgba(255, 255, 255, 0.92)',
-  selection: '#2563eb',
+/**
+ * Палитры сцены: светлая и тёмная.
+ *
+ * slabLightness — светлота цветных плит помещений: на тёмном фоне они приглушены,
+ * чтобы стены и подписи оставались читаемыми.
+ */
+export const THEMES = {
+  light: {
+    floor: '#e9edf3',
+    floorEdge: '#dde2ea',
+    walls: '#d8dee7',
+    label: '#101623',
+    labelBg: 'rgba(255, 255, 255, 0.92)',
+    labelBorder: 'rgba(16, 22, 35, 0.12)',
+    selection: '#2563eb',
+    slabLightness: 0.64,
+  },
+  dark: {
+    floor: '#1c2333',
+    floorEdge: '#2c3547',
+    walls: '#39445a',
+    label: '#e8eef9',
+    labelBg: 'rgba(19, 25, 36, 0.92)',
+    labelBorder: 'rgba(232, 238, 249, 0.18)',
+    selection: '#60a5fa',
+    slabLightness: 0.42,
+  },
 };
 
 // Размеры для камеры

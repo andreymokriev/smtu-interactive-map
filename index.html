@@ -6,6 +6,18 @@
     <meta name="theme-color" content="#f2f4f8" />
     <meta name="description" content="3D-навигатор по корпусу: поиск аудиторий и помещений вместо PDF-планов" />
     <title>3D-навигатор по корпусу</title>
+    <script>
+      // Тема задаётся до отрисовки, чтобы не было вспышки светлой темы.
+      (() => {
+        try {
+          const saved = localStorage.getItem('theme');
+          const dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        } catch {
+          document.documentElement.dataset.theme = 'light';
+        }
+      })();
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
@@ -58,6 +70,15 @@
       <button id="btn-labels" class="icon-btn is-on" type="button" title="Номера помещений" aria-label="Номера помещений" aria-pressed="true">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M6.5 7.5h11M6.5 12h11M6.5 16.5h7" />
+        </svg>
+      </button>
+      <button id="btn-theme" class="icon-btn theme-btn" type="button" title="Тёмная тема" aria-label="Тёмная тема" aria-pressed="false">
+        <svg class="theme-btn__moon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z" />
+        </svg>
+        <svg class="theme-btn__sun" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="4.2" />
+          <path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6" />
         </svg>
       </button>
     </div>

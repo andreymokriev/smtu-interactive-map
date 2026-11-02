@@ -22,9 +22,9 @@ import PLAN_URL_2 from '../2floor.svg?url';
 import PLAN_URL_3 from '../3floor.svg?url';
 import PLAN_URL_4 from '../4floor.svg?url';
 import PLAN_URL_5 from '../5floor.svg?url';
-import { CAMERA, LABEL_FADE } from './config.js';
+import { CAMERA, LABEL_FADE, THEMES } from './config.js';
 import { loadPlan, parsePlanText } from './core/plan.js';
-import { buildModel, setHighlight, setKindVisible } from './core/build.js';
+import { applyTheme, buildModel, setHighlight, setKindVisible } from './core/build.js';
 import { LEGEND_ORDER, ROOM_TYPES, pluralRooms, searchRooms } from './core/rooms.js';
 
 const FLOORS = [
@@ -55,6 +55,8 @@ const dom = {
   btnReset: document.getElementById('btn-reset'),
   btnTop: document.getElementById('btn-top'),
   btnLabels: document.getElementById('btn-labels'),
+  btnTheme: document.getElementById('btn-theme'),
+  themeColor: document.querySelector('meta[name="theme-color"]'),
 };
 
 const state = {
@@ -63,6 +65,7 @@ const state = {
   floorId: FLOORS[0].id,
   floors: new Map(),
   floorToken: 0,
+  theme: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light',
   selectedId: null,
   hoveredId: null,
   hiddenKinds: new Set(),
@@ -472,6 +475,42 @@ function updateStatus() {
   dom.status.title = state.plan.warnings.join('\n');
 }
 
+/* ------------------------------------------------------------------ тема */
+
+function currentTheme() {
+  return THEMES[state.theme] ?? THEMES.light;
+}
+
+function updateThemeButton() {
+  const dark = state.theme === 'dark';
+  const label = dark ? 'Светлая тема' : 'Тёмная тема';
+
+  document.documentElement.dataset.theme = state.theme;
+  dom.btnTheme.setAttribute('aria-pressed', dark ? 'true' : 'false');
+  dom.btnTheme.title = label;
+  dom.btnTheme.setAttribute('aria-label', label);
+  dom.themeColor?.setAttribute('content', dark ? '#0f141d' : '#f2f4f8');
+}
+
+function setTheme(theme, { persist = true } = {}) {
+  state.theme = theme === 'dark' ? 'dark' : 'light';
+  updateThemeButton();
+
+  if (persist) {
+    try {
+      localStorage.setItem('theme', state.theme);
+    } catch {
+      // приватный режим: выбор просто не запомнится
+    }
+  }
+
+  for (const entry of state.floors.values()) {
+    applyTheme(entry.model, currentTheme());
+    entry.theme = state.theme;
+  }
+  updateLabels();
+}
+
 /* ------------------------------------------------------------------ этажи */
 
 function buildFloorSwitcher() {
@@ -539,7 +578,7 @@ async function showFloor(id, { animate = false, initial = false } = {}) {
         throw new Error(`На плане «${floor.label}» не найдено ни одного помещения: проверьте подписи inkscape:label.`);
       }
 
-      entry = { plan, model: buildModel(plan) };
+      entry = { plan, model: buildModel(plan, currentTheme()), theme: state.theme };
       state.floors.set(id, entry);
       scene.add(entry.model.group);
 
@@ -547,6 +586,12 @@ async function showFloor(id, { animate = false, initial = false } = {}) {
         console.warn(`План «${floor.label}» загружен с замечаниями (${plan.warnings.length}):`);
         for (const warning of plan.warnings) console.warn(' ·', warning);
       }
+    }
+
+    // этаж мог быть собран под другую тему — перекрашиваем перед показом
+    if (entry.theme !== state.theme) {
+      applyTheme(entry.model, currentTheme());
+      entry.theme = state.theme;
     }
 
     // смена этажа: плиты предыдущего просто прячем целиком
@@ -618,6 +663,9 @@ function bindUi() {
     dom.btnLabels.classList.toggle('is-on', state.labelsEnabled);
     dom.btnLabels.setAttribute('aria-pressed', state.labelsEnabled ? 'true' : 'false');
     updateLabels();
+  });
+  dom.btnTheme.addEventListener('click', () => {
+    setTheme(state.theme === 'dark' ? 'light' : 'dark');
   });
 
   window.addEventListener('keydown', (event) => {
@@ -695,6 +743,7 @@ async function start() {
   createScene();
   bindUi();
   buildFloorSwitcher();
+  updateThemeButton();
 
   const touch = window.matchMedia('(hover: none)').matches;
   dom.hint.textContent = touch

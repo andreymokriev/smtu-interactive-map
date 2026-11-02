@@ -3,13 +3,21 @@
  * Спрайт всегда развёрнут к камере, поэтому номер читается при любом наклоне.
  */
 import { CanvasTexture, SRGBColorSpace, Sprite, SpriteMaterial } from 'three';
-import { COLORS, LABEL_SIZE } from '../config.js';
+import { LABEL_SIZE, THEMES } from '../config.js';
 
 const FONT_STACK = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 const FONT_SIZE = 34;
 const TEXTURE_SCALE = 2; // плотность текстуры, чтобы текст оставался резким
 
-export function createLabelSprite(text, { color = COLORS.label, height = LABEL_SIZE } = {}) {
+export function createLabelSprite(
+  text,
+  {
+    color = THEMES.light.label,
+    background = THEMES.light.labelBg,
+    border = THEMES.light.labelBorder,
+    height = LABEL_SIZE,
+  } = {},
+) {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   const font = `600 ${FONT_SIZE}px ${FONT_STACK}`;
@@ -35,10 +43,10 @@ export function createLabelSprite(text, { color = COLORS.label, height = LABEL_S
   ctx.lineTo(radius, heightPx - 0.75);
   ctx.arc(radius, heightPx / 2, radius - 0.75, Math.PI / 2, -Math.PI / 2);
   ctx.closePath();
-  ctx.fillStyle = COLORS.labelBg;
+  ctx.fillStyle = background;
   ctx.fill();
   ctx.lineWidth = 1.4;
-  ctx.strokeStyle = 'rgba(16, 22, 35, 0.12)';
+  ctx.strokeStyle = border;
   ctx.stroke();
 
   ctx.font = font;

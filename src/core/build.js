@@ -19,7 +19,7 @@ import {
   Sphere,
   Vector2,
 } from 'three';
-import { COLORS, FLOOR_MARGIN, LABEL_HEIGHT, PLATE_STACK, SLAB_HEIGHT, WALL_HEIGHT } from '../config.js';
+import { FLOOR_MARGIN, LABEL_HEIGHT, PLATE_STACK, SLAB_HEIGHT, THEMES, WALL_HEIGHT } from '../config.js';
 import { extrudeShapes, flattenShapes } from './geometry.js';
 import { createLabelSprite } from './labels.js';
 
@@ -36,9 +36,9 @@ function tint(hex, { saturation, lightness, fallbackSaturation }) {
   return color;
 }
 
-/** Мягкий, «минималистичный» оттенок плиты. */
-function slabColor(hex) {
-  return tint(hex, { saturation: 0.46, lightness: 0.64, fallbackSaturation: 0.06 });
+/** Мягкий, «минималистичный» оттенок плиты для текущей темы. */
+function slabColor(hex, lightness) {
+  return tint(hex, { saturation: 0.46, lightness, fallbackSaturation: 0.06 });
 }
 
 /** Насыщенный оттенок для выделенного помещения, контура и маркеров интерфейса. */
@@ -48,9 +48,10 @@ function vividColor(hex) {
 
 /**
  * @param {ReturnType<import('./plan.js').parsePlanDocument>} plan
+ * @param {typeof THEMES.light} [theme]
  * @returns {{group: Group, views: Map<string, object>, list: object[], pickables: Mesh[], fitSphere: Sphere, center: Vector2, size: Vector2}}
  */
-export function buildModel(plan) {
+export function buildModel(plan, theme = THEMES.light) {
   const center = plan.bounds.getCenter(new Vector2());
   const size = plan.bounds.getSize(new Vector2());
   const group = new Group();
@@ -70,7 +71,7 @@ export function buildModel(plan) {
     });
     wallsMesh = new Mesh(
       geometry,
-      new MeshLambertMaterial({ color: COLORS.walls, side: DoubleSide }),
+      new MeshLambertMaterial({ color: theme.walls, side: DoubleSide }),
     );
     wallsMesh.name = 'walls';
     group.add(wallsMesh);
@@ -91,7 +92,7 @@ export function buildModel(plan) {
       center,
       curveSegments: plan.curveSegments,
     });
-    const material = new MeshLambertMaterial({ color: slabColor(room.color) });
+    const material = new MeshLambertMaterial({ color: slabColor(room.color, theme.slabLightness) });
     const mesh = new Mesh(geometry, material);
     mesh.name = `room:${room.id}`;
     mesh.userData.roomId = room.id;
@@ -102,14 +103,18 @@ export function buildModel(plan) {
     outlineGeometry.translate(0, depth + 0.08, 0);
     const outline = new LineSegments(
       new EdgesGeometry(outlineGeometry, 1),
-      new LineBasicMaterial({ color: COLORS.selection }),
+      new LineBasicMaterial({ color: theme.selection }),
     );
     outline.visible = false;
     outline.renderOrder = 2;
     group.add(outline);
 
     const labelText = room.numbers.length > 0 ? room.numbers.join(' ') : room.title;
-    const sprite = createLabelSprite(labelText);
+    const sprite = createLabelSprite(labelText, {
+      color: theme.label,
+      background: theme.labelBg,
+      border: theme.labelBorder,
+    });
     sprite.position.set(room.centroid.x - center.x, LABEL_HEIGHT, room.centroid.y - center.y);
     group.add(sprite);
 
@@ -118,6 +123,7 @@ export function buildModel(plan) {
       mesh,
       outline,
       sprite,
+      labelText,
       baseColor: material.color.clone(),
       baseLabelScale: sprite.scale.clone(),
       hidden: false,
@@ -130,7 +136,7 @@ export function buildModel(plan) {
   // --- подложка пола ---
   const floor = new Mesh(
     new PlaneGeometry(size.x + FLOOR_MARGIN * 2, size.y + FLOOR_MARGIN * 2),
-    new MeshLambertMaterial({ color: COLORS.floor }),
+    new MeshLambertMaterial({ color: theme.floor }),
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.35;
@@ -144,7 +150,7 @@ export function buildModel(plan) {
   );
   const frame = new LineSegments(
     frameGeometry,
-    new LineBasicMaterial({ color: COLORS.floorEdge }),
+    new LineBasicMaterial({ color: theme.floorEdge }),
   );
   frame.rotation.x = -Math.PI / 2;
   frame.position.y = -0.3;
@@ -158,7 +164,43 @@ export function buildModel(plan) {
   if (wallsMesh) fitBox.expandByObject(wallsMesh);
   const fitSphere = fitBox.getBoundingSphere(new Sphere());
 
-  return { group, views, list, pickables, wallsMesh, center, size, fitSphere };
+  return { group, views, list, pickables, wallsMesh, floor, frame, center, size, fitSphere };
+}
+
+/**
+ * Перекрашивает готовую модель этажа под другую тему: плиты, стены, подложку
+ * и подписи. Модели этажей кешируются, поэтому это единственный способ
+ * переключить тему без повторной сборки геометрии.
+ */
+export function applyTheme(model, theme) {
+  model.wallsMesh?.material.color.set(theme.walls);
+  model.floor.material.color.set(theme.floor);
+  model.frame.material.color.set(theme.floorEdge);
+
+  for (const view of model.list) {
+    const selected = view.outline.visible;
+    view.baseColor = slabColor(view.room.color, theme.slabLightness);
+    view.mesh.material.color.copy(selected ? vividColor(view.room.color) : view.baseColor);
+    view.outline.material.color.set(theme.selection);
+
+    const previous = view.sprite;
+    const sprite = createLabelSprite(view.labelText, {
+      color: theme.label,
+      background: theme.labelBg,
+      border: theme.labelBorder,
+    });
+    sprite.position.copy(previous.position);
+    sprite.visible = previous.visible;
+    sprite.material.opacity = previous.material.opacity;
+    view.baseLabelScale = sprite.scale.clone();
+    if (selected) sprite.scale.multiplyScalar(1.22);
+
+    model.group.add(sprite);
+    previous.removeFromParent();
+    previous.material.map?.dispose();
+    previous.material.dispose();
+    view.sprite = sprite;
+  }
 }
 
 /** Подсветка выбранного помещения: насыщенный цвет, приподнятая плита, заметный номер. */

@@ -481,6 +481,39 @@ check('легенда и статус соответствуют 2 этажу', 
 await page.evaluate(() => window.__navigator.setFloor('1'));
 await page.waitForFunction(() => window.__navigator.floor === '1', { timeout: 20000 });
 
+/* --------------------------------------------------------------- тема */
+
+const themeBefore = await page.evaluate(() => ({
+  theme: document.documentElement.dataset.theme,
+  card: getComputedStyle(document.querySelector('.search__field')).backgroundColor,
+  walls: window.__navigator.model.wallsMesh.material.color.getHexString(),
+}));
+
+await page.click('#btn-theme');
+await page.waitForFunction((previous) => document.documentElement.dataset.theme !== previous, {}, themeBefore.theme);
+
+const themeAfter = await page.evaluate(() => ({
+  theme: document.documentElement.dataset.theme,
+  pressed: document.getElementById('btn-theme').getAttribute('aria-pressed'),
+  card: getComputedStyle(document.querySelector('.search__field')).backgroundColor,
+  walls: window.__navigator.model.wallsMesh.material.color.getHexString(),
+  stored: localStorage.getItem('theme'),
+}));
+const expectedTheme = themeBefore.theme === 'dark' ? 'light' : 'dark';
+
+check(
+  'переключатель меняет тему интерфейса и 3D-сцены',
+  themeAfter.theme === expectedTheme &&
+    themeAfter.pressed === (expectedTheme === 'dark' ? 'true' : 'false') &&
+    themeAfter.card !== themeBefore.card &&
+    themeAfter.walls !== themeBefore.walls &&
+    themeAfter.stored === expectedTheme,
+  `тема ${themeBefore.theme} → ${themeAfter.theme}, стены ${themeBefore.walls} → ${themeAfter.walls}`,
+);
+
+await page.click('#btn-theme');
+await page.waitForFunction((previous) => document.documentElement.dataset.theme === previous, {}, themeBefore.theme);
+
 /* -------------------------------------------------------- кадр не пустой */
 
 const frame = await page.evaluate(() => {
@@ -512,7 +545,8 @@ const frame = await page.evaluate(() => {
 });
 
 check('кадр отрисован и заполнен не полностью', frame.covered > 0.1 && frame.covered < 0.995, `занято ${(frame.covered * 100).toFixed(1)}%`);
-check('освещение и цвета в норме (нет чёрного или белого экрана)', frame.mean > 60 && frame.mean < 250, `средняя яркость ${frame.mean.toFixed(0)}`);
+// нижняя граница рассчитана и на тёмную тему: она заметно темнее, но не чёрная
+check('освещение и цвета в норме (нет чёрного или белого экрана)', frame.mean > 20 && frame.mean < 250, `средняя яркость ${frame.mean.toFixed(0)}`);
 check('в кадре есть разнообразие цветов', frame.colours > 40 && frame.max - frame.min > 40, `${frame.colours} оттенков, диапазон ${(frame.max - frame.min).toFixed(0)}`);
 
 /* ------------------------------------------------------------- мобильный вид */
