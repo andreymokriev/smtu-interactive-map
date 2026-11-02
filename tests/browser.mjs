@@ -559,18 +559,23 @@ await page.evaluate(() => {
   window.__navigator.select('stud_105', { focus: false });
 });
 const mobile = await page.evaluate(() => {
+  const rect = (element) => {
+    const box = element.getBoundingClientRect();
+    return { left: box.left, right: box.right, top: box.top, bottom: box.bottom };
+  };
   const field = document.querySelector('.search__field').getBoundingClientRect();
   const legend = document.getElementById('legend');
-  const card = document.getElementById('card').getBoundingClientRect();
-  const controls = document.querySelector('.controls').getBoundingClientRect();
   return {
     innerWidth: window.innerWidth,
     innerHeight: window.innerHeight,
     overflowX: document.documentElement.scrollWidth,
     field: { left: field.left, right: field.right, top: field.top },
+    fieldBox: rect(document.querySelector('.search__field')),
+    floors: rect(document.getElementById('floors')),
+    legend: rect(legend),
     legendScrolls: legend.scrollWidth >= legend.clientWidth,
-    card: { left: card.left, right: card.right, top: card.top, bottom: card.bottom },
-    controls: { left: controls.left, right: controls.right, top: controls.top, bottom: controls.bottom },
+    card: rect(document.getElementById('card')),
+    controls: rect(document.querySelector('.controls')),
   };
 });
 
@@ -582,6 +587,16 @@ check(
   mobile.card.left >= 0 && mobile.card.right <= mobile.innerWidth + 1 && mobile.card.bottom <= mobile.innerHeight + 1 &&
     mobile.controls.left >= 0 && mobile.controls.right <= mobile.innerWidth + 1 && mobile.controls.top >= 0,
   `карточка ${mobile.card.top.toFixed(0)}…${mobile.card.bottom.toFixed(0)}, кнопки ${mobile.controls.left.toFixed(0)}…${mobile.controls.right.toFixed(0)}`,
+);
+
+const overlaps = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+check(
+  'кнопки вида не перекрывают этажи, поиск, легенду и карточку',
+  !overlaps(mobile.controls, mobile.floors) &&
+    !overlaps(mobile.controls, mobile.fieldBox) &&
+    !overlaps(mobile.controls, mobile.legend) &&
+    !overlaps(mobile.controls, mobile.card),
+  `кнопки ${mobile.controls.left.toFixed(0)}…${mobile.controls.right.toFixed(0)} × ${mobile.controls.top.toFixed(0)}…${mobile.controls.bottom.toFixed(0)}`,
 );
 check('на телефоне ошибок не появилось', pageErrors.length === 0, pageErrors.join(' | '));
 

@@ -520,9 +520,9 @@ html[data-theme="dark"] .theme-btn__sun {
     display: none;
   }
 
+  /* как и на пк — в нижнем правом углу, но над карточкой и строкой статуса */
   .controls {
-    bottom: auto;
-    top: calc(var(--top) + 106px);
+    bottom: calc(var(--bottom) + 104px);
     right: 12px;
     grid-auto-flow: column;
   }
