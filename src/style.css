@@ -1,3 +1,68 @@
+/*
+ * Регистрация цветовых переменных делает их анимируемыми: при смене темы значения
+ * интерполируются на <html>, а панели, текст и градиент фона плавно следуют за ними.
+ */
+@property --bg {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #eef1f6;
+}
+@property --body-top {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ffffff;
+}
+@property --body-edge {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #e6eaf1;
+}
+@property --ink {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #14181f;
+}
+@property --ink-soft {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #6b7280;
+}
+@property --accent {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #2563eb;
+}
+@property --accent-ink {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ffffff;
+}
+@property --card {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: rgba(255, 255, 255, 0.9);
+}
+@property --card-border {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: rgba(20, 24, 31, 0.08);
+}
+@property --soft {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: rgba(20, 24, 31, 0.06);
+}
+@property --track {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: rgba(20, 24, 31, 0.12);
+}
+@property --result-active {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: rgba(37, 99, 235, 0.1);
+}
+
 :root {
   color-scheme: light;
   --bg: #eef1f6;
@@ -38,6 +103,32 @@ html[data-theme="dark"] {
   --chip-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
   --result-active: rgba(96, 165, 250, 0.16);
   --focus-shadow: 0 8px 30px rgba(96, 165, 250, 0.22);
+}
+
+/* длительность совпадает с THEME_FADE в src/config.js */
+html {
+  transition:
+    --bg 0.35s ease,
+    --body-top 0.35s ease,
+    --body-edge 0.35s ease,
+    --ink 0.35s ease,
+    --ink-soft 0.35s ease,
+    --accent 0.35s ease,
+    --accent-ink 0.35s ease,
+    --card 0.35s ease,
+    --card-border 0.35s ease,
+    --soft 0.35s ease,
+    --track 0.35s ease,
+    --result-active 0.35s ease;
+}
+
+/* тени не анимируются через переменные — их переводим напрямую */
+.floors,
+.results,
+.chip,
+.icon-btn,
+.card {
+  transition: box-shadow 0.35s ease;
 }
 
 * {
@@ -560,6 +651,10 @@ html[data-theme="dark"] .theme-btn__sun {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html {
+    transition: none;
+  }
+
   .loading,
   .hint {
     animation: none;

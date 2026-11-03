@@ -17,6 +17,9 @@ export const LABEL_HEIGHT = 4.6; // высота, на которой висят
 export const LABEL_SIZE = 6.4; // высота «таблетки» с номером в единицах сцены
 export const FLOOR_MARGIN = 70; // запас подложки пола вокруг корпуса
 
+// длительность плавной смены темы, мс (совпадает с transition палитры в style.css)
+export const THEME_FADE = 350;
+
 /**
  * Палитры сцены: светлая и тёмная.
  *

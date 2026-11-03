@@ -491,6 +491,8 @@ const themeBefore = await page.evaluate(() => ({
 
 await page.click('#btn-theme');
 await page.waitForFunction((previous) => document.documentElement.dataset.theme !== previous, {}, themeBefore.theme);
+// тема меняется плавно (THEME_FADE = 350 мс): проверяем итоговую палитру после перехода
+await new Promise((resolve) => setTimeout(resolve, 500));
 
 const themeAfter = await page.evaluate(() => ({
   theme: document.documentElement.dataset.theme,
@@ -513,6 +515,8 @@ check(
 
 await page.click('#btn-theme');
 await page.waitForFunction((previous) => document.documentElement.dataset.theme === previous, {}, themeBefore.theme);
+// обратный переход тоже плавный — кадр проверяем после него
+await new Promise((resolve) => setTimeout(resolve, 500));
 
 /* -------------------------------------------------------- кадр не пустой */
 

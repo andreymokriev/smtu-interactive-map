@@ -22,9 +22,15 @@ import PLAN_URL_2 from '../2floor.svg?url';
 import PLAN_URL_3 from '../3floor.svg?url';
 import PLAN_URL_4 from '../4floor.svg?url';
 import PLAN_URL_5 from '../5floor.svg?url';
-import { CAMERA, LABEL_FADE, THEMES } from './config.js';
+import { CAMERA, LABEL_FADE, THEME_FADE, THEMES } from './config.js';
 import { loadPlan, parsePlanText } from './core/plan.js';
-import { applyTheme, buildModel, setHighlight, setKindVisible } from './core/build.js';
+import {
+  buildModel,
+  setHighlight,
+  setKindVisible,
+  startThemeTransition,
+  stepThemeTransition,
+} from './core/build.js';
 import { LEGEND_ORDER, ROOM_TYPES, pluralRooms, searchFloorRooms } from './core/rooms.js';
 
 const FLOORS = [
@@ -240,12 +246,14 @@ function updateLabels() {
   const far = state.fitDistance * fade.far;
   const closeness = 1 - clamp((distance - near) / Math.max(far - near, 1), 0, 1);
 
+  // во время смены темы подписи гаснут и проявляются вместе с новыми цветами
+  const themeFade = state.model.labelFade ?? 1;
   for (const view of state.model.list) {
     const isSelected = view.room.id === state.selectedId;
     const canShow = state.labelsEnabled && !view.hidden && (closeness > 0.02 || isSelected);
     view.sprite.visible = canShow;
     if (canShow) {
-      view.sprite.material.opacity = isSelected ? 1 : 0.12 + 0.88 * closeness;
+      view.sprite.material.opacity = (isSelected ? 1 : 0.12 + 0.88 * closeness) * themeFade;
     }
   }
 }
@@ -559,8 +567,11 @@ function setTheme(theme, { persist = true } = {}) {
     }
   }
 
+  // переход длится THEME_FADE: цвета доводит кадровый цикл, CSS-переменные — style.css
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const duration = reduceMotion ? 0 : THEME_FADE;
   for (const entry of state.floors.values()) {
-    applyTheme(entry.model, currentTheme());
+    startThemeTransition(entry.model, currentTheme(), duration);
     entry.theme = state.theme;
   }
   updateLabels();
@@ -674,7 +685,7 @@ async function showFloor(id, { animate = false, initial = false } = {}) {
 
     // этаж мог быть собран под другую тему — перекрашиваем перед показом
     if (entry.theme !== state.theme) {
-      applyTheme(entry.model, currentTheme());
+      startThemeTransition(entry.model, currentTheme(), 0);
       entry.theme = state.theme;
     }
 
@@ -847,6 +858,7 @@ async function start() {
 
     applyTween(delta);
     controls.update();
+    for (const entry of state.floors.values()) stepThemeTransition(entry.model, delta);
     updateLabels();
     renderer.render(scene, camera);
   });

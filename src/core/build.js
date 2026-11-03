@@ -164,15 +164,11 @@ export function buildModel(plan, theme = THEMES.light) {
   if (wallsMesh) fitBox.expandByObject(wallsMesh);
   const fitSphere = fitBox.getBoundingSphere(new Sphere());
 
-  return { group, views, list, pickables, wallsMesh, floor, frame, center, size, fitSphere };
+  return { group, views, list, pickables, wallsMesh, floor, frame, center, size, fitSphere, labelFade: 1 };
 }
 
-/**
- * Перекрашивает готовую модель этажа под другую тему: плиты, стены, подложку
- * и подписи. Модели этажей кешируются, поэтому это единственный способ
- * переключить тему без повторной сборки геометрии.
- */
-export function applyTheme(model, theme) {
+/** Краски сцены без подписей: их можно интерполировать в кадровом цикле. */
+function applyThemeColors(model, theme) {
   model.wallsMesh?.material.color.set(theme.walls);
   model.floor.material.color.set(theme.floor);
   model.frame.material.color.set(theme.floorEdge);
@@ -182,7 +178,12 @@ export function applyTheme(model, theme) {
     view.baseColor = slabColor(view.room.color, theme.slabLightness);
     view.mesh.material.color.copy(selected ? vividColor(view.room.color) : view.baseColor);
     view.outline.material.color.set(theme.selection);
+  }
+}
 
+/** Пересоздаёт подписи под палитру: цвет текста и фон «таблеток» запечены в текстуре. */
+function replaceLabels(model, theme) {
+  for (const view of model.list) {
     const previous = view.sprite;
     const sprite = createLabelSprite(view.labelText, {
       color: theme.label,
@@ -193,7 +194,7 @@ export function applyTheme(model, theme) {
     sprite.visible = previous.visible;
     sprite.material.opacity = previous.material.opacity;
     view.baseLabelScale = sprite.scale.clone();
-    if (selected) sprite.scale.multiplyScalar(1.22);
+    if (view.outline.visible) sprite.scale.multiplyScalar(1.22);
 
     model.group.add(sprite);
     previous.removeFromParent();
@@ -201,6 +202,106 @@ export function applyTheme(model, theme) {
     previous.material.dispose();
     view.sprite = sprite;
   }
+}
+
+/**
+ * Перекрашивает готовую модель этажа под другую тему: плиты, стены, подложку
+ * и подписи. Модели этажей кешируются, поэтому это единственный способ
+ * переключить тему без повторной сборки геометрии.
+ */
+export function applyTheme(model, theme) {
+  applyThemeColors(model, theme);
+  replaceLabels(model, theme);
+}
+
+const easeTheme = (t) => 1 - (1 - t) ** 3;
+
+/**
+ * Запускает плавную смену палитры: цвета материалов доводит stepThemeTransition,
+ * а подписи гаснут к середине перехода и появляются уже в новых цветах.
+ *
+ * @param {object} model модель этажа из buildModel
+ * @param {typeof THEMES.light} theme целевая палитра
+ * @param {number} duration длительность в мс; 0 — сменить тему сразу
+ */
+export function startThemeTransition(model, theme, duration) {
+  if (!(duration > 0)) {
+    model.themeTween = null;
+    model.labelFade = 1;
+    applyTheme(model, theme);
+    return;
+  }
+
+  const to = {
+    walls: new Color(theme.walls),
+    floor: new Color(theme.floor),
+    frame: new Color(theme.floorEdge),
+    selection: new Color(theme.selection),
+    slabs: new Map(),
+  };
+  const from = {
+    walls: model.wallsMesh ? model.wallsMesh.material.color.clone() : null,
+    floor: model.floor.material.color.clone(),
+    frame: model.frame.material.color.clone(),
+    selection: model.list[0]?.outline.material.color.clone() ?? new Color(theme.selection),
+    slabs: new Map(),
+    labelFade: model.labelFade ?? 1,
+  };
+
+  for (const view of model.list) {
+    from.slabs.set(view, view.mesh.material.color.clone());
+    to.slabs.set(
+      view,
+      view.outline.visible ? vividColor(view.room.color) : slabColor(view.room.color, theme.slabLightness),
+    );
+  }
+
+  model.themeTween = { elapsed: 0, duration, from, to, theme, swapped: false };
+}
+
+/**
+ * Кадровый шаг плавной смены темы.
+ *
+ * @returns {boolean} true, пока переход ещё идёт
+ */
+export function stepThemeTransition(model, delta) {
+  const tween = model.themeTween;
+  if (!tween) return false;
+
+  tween.elapsed += delta * 1000;
+  const progress = Math.min(tween.elapsed / tween.duration, 1);
+  const k = easeTheme(progress);
+
+  if (model.wallsMesh && tween.from.walls) {
+    model.wallsMesh.material.color.lerpColors(tween.from.walls, tween.to.walls, k);
+  }
+  model.floor.material.color.lerpColors(tween.from.floor, tween.to.floor, k);
+  model.frame.material.color.lerpColors(tween.from.frame, tween.to.frame, k);
+  for (const view of model.list) {
+    view.mesh.material.color.lerpColors(tween.from.slabs.get(view), tween.to.slabs.get(view), k);
+    view.outline.material.color.lerpColors(tween.from.selection, tween.to.selection, k);
+  }
+
+  // подписи меняем в середине, когда они уже погашены: так текст не мигает
+  const half = tween.duration / 2;
+  if (tween.elapsed < half) {
+    model.labelFade = tween.from.labelFade * (1 - tween.elapsed / half);
+  } else {
+    if (!tween.swapped) {
+      model.labelFade = 0;
+      replaceLabels(model, tween.theme);
+      tween.swapped = true;
+    }
+    model.labelFade = Math.min((tween.elapsed - half) / half, 1);
+  }
+
+  if (progress < 1) return true;
+
+  model.themeTween = null;
+  model.labelFade = 1;
+  applyThemeColors(model, tween.theme);
+  if (!tween.swapped) replaceLabels(model, tween.theme);
+  return false;
 }
 
 /** Подсветка выбранного помещения: насыщенный цвет, приподнятая плита, заметный номер. */
