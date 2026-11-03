@@ -134,6 +134,18 @@ export function matchScore(room, query) {
   return -1;
 }
 
+/** Сортировка совпадений: сначала точность, затем номер и название, затем этаж. */
+function compareScored(a, b) {
+  if (a.score !== b.score) return a.score - b.score;
+  const na = parseInt(a.room.numbers[0] ?? '', 10);
+  const nb = parseInt(b.room.numbers[0] ?? '', 10);
+  if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb;
+  const byTitle = a.room.title.localeCompare(b.room.title, 'ru');
+  if (byTitle !== 0) return byTitle;
+  // одинаковые названия бывают на разных этажах: младший этаж выше в выдаче
+  return (Number(a.floorId) || 0) - (Number(b.floorId) || 0);
+}
+
 /** Поиск по всем помещениям с сортировкой по релевантности. */
 export function searchRooms(rooms, query, limit = 8) {
   const scored = [];
@@ -141,14 +153,27 @@ export function searchRooms(rooms, query, limit = 8) {
     const score = matchScore(room, query);
     if (score >= 0) scored.push({ room, score });
   }
-  scored.sort((a, b) => {
-    if (a.score !== b.score) return a.score - b.score;
-    const na = parseInt(a.room.numbers[0] ?? '', 10);
-    const nb = parseInt(b.room.numbers[0] ?? '', 10);
-    if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb;
-    return a.room.title.localeCompare(b.room.title, 'ru');
-  });
+  scored.sort(compareScored);
   return scored.slice(0, limit).map((item) => item.room);
+}
+
+/**
+ * Поиск сразу по нескольким этажам: помещения всех планов сравниваются по релевантности,
+ * поэтому в выдачу попадают лучшие совпадения со всего корпуса.
+ *
+ * @param {{floorId: string, rooms: object[]}[]} floors
+ * @returns {{room: object, floorId: string}[]}
+ */
+export function searchFloorRooms(floors, query, limit = 8) {
+  const scored = [];
+  for (const floor of floors) {
+    for (const room of floor.rooms) {
+      const score = matchScore(room, query);
+      if (score >= 0) scored.push({ room, score, floorId: floor.floorId });
+    }
+  }
+  scored.sort(compareScored);
+  return scored.slice(0, limit).map(({ room, floorId }) => ({ room, floorId }));
 }
 
 /** Русское склонение: 1 помещение, 2 помещения, 5 помещений. */

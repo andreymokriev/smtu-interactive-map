@@ -25,7 +25,7 @@ import PLAN_URL_5 from '../5floor.svg?url';
 import { CAMERA, LABEL_FADE, THEMES } from './config.js';
 import { loadPlan, parsePlanText } from './core/plan.js';
 import { applyTheme, buildModel, setHighlight, setKindVisible } from './core/build.js';
-import { LEGEND_ORDER, ROOM_TYPES, pluralRooms, searchRooms } from './core/rooms.js';
+import { LEGEND_ORDER, ROOM_TYPES, pluralRooms, searchFloorRooms } from './core/rooms.js';
 
 const FLOORS = [
   { id: '1', label: '1 этаж', url: PLAN_URL_1 },
@@ -64,6 +64,9 @@ const state = {
   model: null,
   floorId: FLOORS[0].id,
   floors: new Map(),
+  // разобранные планы всех этажей: общий кеш для переключателя этажей и поиска
+  plans: new Map(),
+  planErrors: new Set(),
   floorToken: 0,
   theme: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light',
   selectedId: null,
@@ -308,16 +311,18 @@ function hideResults() {
   state.activeIndex = -1;
 }
 
-function renderResults(rooms, query) {
+function renderResults(items, query, { pending = false } = {}) {
   dom.results.replaceChildren();
 
-  if (rooms.length === 0) {
+  if (items.length === 0) {
     const item = document.createElement('li');
     item.className = 'result result--empty';
-    item.textContent = `Ничего не найдено по запросу «${query}»`;
+    item.textContent = pending
+      ? `Ищем по всем этажам: «${query}»…`
+      : `Ничего не найдено по запросу «${query}»`;
     dom.results.append(item);
   } else {
-    rooms.forEach((room, index) => {
+    items.forEach(({ room, floorId }, index) => {
       const item = document.createElement('li');
       item.className = 'result';
       item.setAttribute('role', 'option');
@@ -335,14 +340,27 @@ function renderResults(rooms, query) {
       type.className = 'result__type';
       type.textContent = room.label;
 
-      item.append(dot, title, type);
+      // этаж важен именно в общей выдаче: одинаковые названия бывают на разных планах
+      const floor = document.createElement('span');
+      floor.className = 'result__floor';
+      floor.textContent = FLOOR_BY_ID.get(floorId)?.label ?? '';
+
+      item.append(dot, title, type, floor);
       item.addEventListener('click', () => chooseResult(index));
       dom.results.append(item);
     });
   }
 
-  state.results = rooms;
-  state.activeIndex = rooms.length > 0 ? 0 : -1;
+  if (pending && items.length > 0) {
+    const note = document.createElement('li');
+    note.className = 'result result--note';
+    note.setAttribute('role', 'presentation');
+    note.textContent = 'Ищем на остальных этажах…';
+    dom.results.append(note);
+  }
+
+  state.results = items;
+  state.activeIndex = items.length > 0 ? 0 : -1;
   highlightActiveResult();
   dom.results.hidden = false;
   dom.query.setAttribute('aria-expanded', 'true');
@@ -356,12 +374,43 @@ function highlightActiveResult() {
   });
 }
 
-function chooseResult(index) {
-  const room = state.results[index];
-  if (!room) return;
-  selectRoom(room.id, { focus: true });
-  hideResults();
+/** Помещения всех загруженных планов; фильтры типов действуют только на текущем этаже. */
+function searchableFloors() {
+  return [...state.plans].map(([floorId, plan]) => ({
+    floorId,
+    rooms:
+      floorId === state.floorId
+        ? plan.rooms.filter((room) => !state.hiddenKinds.has(room.kind))
+        : plan.rooms,
+  }));
+}
+
+/** Этажи, чьи планы ещё не загружены (и не падали с ошибкой). */
+function missingPlans() {
+  return FLOORS.filter((floor) => !state.plans.has(floor.id) && !state.planErrors.has(floor.id));
+}
+
+/** Догружает планы остальных этажей, чтобы поиск видел весь корпус. */
+async function ensureAllPlans() {
+  await Promise.all(
+    missingPlans().map((floor) =>
+      planFor(floor.id).catch((error) => {
+        console.warn(`Поиск не увидит ${floor.label}:`, error);
+      }),
+    ),
+  );
+}
+
+async function chooseResult(index) {
+  const found = state.results[index];
+  if (!found) return;
+
   dom.query.blur();
+  if (found.floorId !== state.floorId) {
+    await showFloor(found.floorId, { animate: true });
+  }
+  if (state.floorId === found.floorId) selectRoom(found.room.id, { focus: true });
+  hideResults();
 }
 
 function onQueryInput() {
@@ -373,10 +422,16 @@ function onQueryInput() {
     return;
   }
 
-  const rooms = searchRooms(state.plan.rooms, query, 8).filter(
-    (room) => !state.hiddenKinds.has(room.kind),
-  );
-  renderResults(rooms, query);
+  const pending = missingPlans().length > 0;
+  const items = searchFloorRooms(searchableFloors(), query, 8);
+  renderResults(items, query, { pending });
+
+  if (pending) {
+    ensureAllPlans().then(() => {
+      // пока грузились планы, запрос могли изменить или уже выбрать результат
+      if (dom.query.value.trim() === query && !dom.results.hidden) onQueryInput();
+    });
+  }
 }
 
 function onQueryKeydown(event) {
@@ -554,9 +609,38 @@ function hideLoading() {
   dom.loading.classList.add('loading--done');
 }
 
+const planPromises = new Map();
+
 /**
- * Показывает этаж, загружая и собирая его модель при первом обращении.
- * Разобранные этажи кешируются, поэтому повторное переключение мгновенное.
+ * Разобранный план этажа по id. Загрузка одна на этаж: результат делят
+ * переключатель этажей, поиск и предзагрузка.
+ */
+function planFor(id) {
+  const floor = FLOOR_BY_ID.get(id);
+  if (!floor) return Promise.reject(new Error(`Неизвестный этаж «${id}»`));
+  if (state.plans.has(id)) return Promise.resolve(state.plans.get(id));
+
+  let promise = planPromises.get(id);
+  if (!promise) {
+    promise = loadPlan(floor.url)
+      .then((plan) => {
+        state.plans.set(id, plan);
+        state.planErrors.delete(id);
+        return plan;
+      })
+      .catch((error) => {
+        planPromises.delete(id);
+        state.planErrors.add(id);
+        throw error;
+      });
+    planPromises.set(id, promise);
+  }
+  return promise;
+}
+
+/**
+ * Показывает этаж, собирая его модель при первом обращении.
+ * Разобранные планы и модели кешируются, поэтому повторное переключение мгновенное.
  */
 async function showFloor(id, { animate = false, initial = false } = {}) {
   const floor = FLOOR_BY_ID.get(id);
@@ -571,7 +655,7 @@ async function showFloor(id, { animate = false, initial = false } = {}) {
   try {
     let entry = state.floors.get(id);
     if (!entry) {
-      const plan = await loadPlan(floor.url);
+      const plan = await planFor(id);
       if (token !== state.floorToken) return;
 
       if (plan.rooms.length === 0) {
@@ -645,6 +729,10 @@ async function showFloor(id, { animate = false, initial = false } = {}) {
 function bindUi() {
   dom.query.addEventListener('input', onQueryInput);
   dom.query.addEventListener('keydown', onQueryKeydown);
+  // поиск ищет по всему корпусу: планы остальных этажей грузим заранее, ещё до ввода
+  dom.query.addEventListener('focus', () => {
+    ensureAllPlans();
+  });
   dom.queryClear.addEventListener('click', () => {
     dom.query.value = '';
     dom.queryClear.hidden = true;
