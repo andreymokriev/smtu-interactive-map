@@ -42,6 +42,27 @@ const FLOORS = [
 ];
 const FLOOR_BY_ID = new Map(FLOORS.map((floor) => [floor.id, floor]));
 
+/**
+ * Помещение из адресной строки: ?room=105, ?room=stud_105, ?aud=105 или #105.
+ * Нужно, чтобы на карту можно было сослаться из другого приложения (например, из
+ * расписания): сайт статичный, поэтому параметр разбирает сам браузер, без запросов.
+ */
+function roomFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const hash = window.location.hash.replace(/^#/, '');
+  let value = params.get('room') ?? params.get('aud') ?? new URLSearchParams(hash).get('room') ?? '';
+
+  // короткая форма: #105
+  if (!value && hash && !hash.includes('=')) {
+    try {
+      value = decodeURIComponent(hash);
+    } catch {
+      value = hash;
+    }
+  }
+  return value.trim();
+}
+
 const dom = {
   viewport: document.getElementById('viewport'),
   query: document.getElementById('query'),
@@ -737,6 +758,37 @@ async function showFloor(id, { animate = false, initial = false } = {}) {
   }
 }
 
+/**
+ * Открывает помещение, указанное в ссылке: включает нужный этаж, подсвечивает комнату
+ * и подлетает к ней. Ищет по всем этажам, как обычный поиск.
+ */
+async function openRoomFromUrl() {
+  const value = roomFromUrl();
+  if (!value) return;
+
+  await ensureAllPlans();
+
+  // по полной подписи (stud_105) номер тоже находится: пробуем её как есть и по частям
+  const candidates = [value];
+  for (const token of value.split(/[_\s,]+/)) {
+    if (/\d/.test(token) && !candidates.includes(token)) candidates.push(token);
+  }
+
+  for (const candidate of candidates) {
+    const [found] = searchFloorRooms(searchableFloors(), candidate, 1);
+    if (!found) continue;
+
+    if (found.floorId !== state.floorId) await showFloor(found.floorId, { animate: false });
+    // этаж мог не открыться (план не загрузился) — тогда просто остаёмся на текущем
+    if (state.floorId === found.floorId) {
+      selectRoom(found.room.id, { focus: true });
+      return;
+    }
+  }
+
+  console.warn(`В ссылке помещение «${value}», но в плане его нет — открыт общий вид.`);
+}
+
 function bindUi() {
   dom.query.addEventListener('input', onQueryInput);
   dom.query.addEventListener('keydown', onQueryKeydown);
@@ -869,6 +921,9 @@ async function start() {
   if (!state.plan || !state.model) return;
 
   dom.status.hidden = false;
+
+  // ссылка из другого приложения: ?room=105 сразу открывает аудиторию
+  await openRoomFromUrl();
 
   // отладочная ручка: пригодится, чтобы проверять план и разбираться с ошибками в SVG
   window.__navigator = {
